@@ -1,0 +1,1 @@
+web: streamlit run mainpp.py --server.port 8080
