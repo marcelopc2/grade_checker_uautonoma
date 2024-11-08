@@ -248,7 +248,7 @@ def main():
                 if not df_missing_grades.empty:
                     st.header(':red[ESTE CURSO TIENE NOTAS PENDIENTES DE LOS SIGUIENTES ALUMNOS 😭]')
                     st.subheader(f'{course_name} ({course_id})', divider='red')
-                    st.dataframe(df_missing_grades, use_container_width=True)
+                    st.dataframe(df_missing_grades.fillna('❌'), use_container_width=True)
                 else:
                     st.header(':green[ESTE CURSO TIENE TODAS SUS NOTAS!!!] 🤩')
                     st.subheader(f'{course_name} ({course_id})', divider='green')
