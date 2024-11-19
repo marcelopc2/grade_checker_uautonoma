@@ -111,7 +111,7 @@ def obtener_notas_curso(COURSE_ID):
     data = []
     for student in submissions:
         student_id = student['user_id']
-        student_name = student_names.get(student_id, 'Desconocido').capitalize()
+        student_name = student_names.get(student_id, 'Desconocido').title()
         student_sis_user_id = student.get('sis_user_id', 'Desconocido')
         rut = student_sis_user_id[:-1] + '-' + student_sis_user_id[-1] if student_sis_user_id != 'Desconocido' else 'Desconocido'
         student_email = user_emails.get(student_id, 'Desconocido').lower()
@@ -244,7 +244,7 @@ def main():
             course_name = st.session_state['course_names'].get(course_id, 'Desconocido')
             df = st.session_state['dataframes'].get(course_id)
             if df is not None:
-                df_missing_grades = df[df.applymap(lambda x: pd.isnull(x)).any(axis=1)]
+                df_missing_grades = df[df.map(lambda x: pd.isnull(x)).any(axis=1)]
                 if not df_missing_grades.empty:
                     st.header(':red[ESTE CURSO TIENE NOTAS PENDIENTES DE LOS SIGUIENTES ALUMNOS 😭]')
                     st.subheader(f'{course_name} ({course_id})', divider='red')
