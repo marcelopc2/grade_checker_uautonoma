@@ -4,6 +4,7 @@ import pandas as pd
 from decouple import config
 from io import BytesIO
 
+
 API_URL = 'https://canvas.uautonoma.cl/api/v1'
 ACCESS_TOKEN = config('TOKEN')  # Reemplaza con tu token de acceso
 
@@ -28,8 +29,26 @@ def obtener_notas_curso(COURSE_ID):
     if not students:
         st.warning(f'No se encontraron estudiantes para el curso {COURSE_ID}')
         return None
+    
+    import unicodedata
+
+    # Define the custom sorting key function
+    def spanish_sort_key(name):
+        # Normalize the name to uppercase
+        name = name.upper()
+        # Remove accents from characters
+        name = ''.join(
+            (c for c in unicodedata.normalize('NFD', name)
+             if unicodedata.category(c) != 'Mn')
+        )
+        # Replace 'Ñ' with a placeholder that comes after 'N' and before 'O'
+        # We'll use 'N~' to achieve this
+        name = name.replace('Ñ', 'N~')
+        return name
+    
     student_ids = [s['id'] for s in students if s['name'] != 'Estudiante de prueba']
     student_names = {s['id']: s['name'] for s in students if s['name'] != 'Estudiante de prueba'}
+    student_sortable_names = {s['id']: s['sortable_name'] for s in students if s['name'] != 'Estudiante de prueba'}
 
     # Obtener la lista de tareas (assignments) y sus nombres
     assignments = []
@@ -112,10 +131,15 @@ def obtener_notas_curso(COURSE_ID):
     for student in submissions:
         student_id = student['user_id']
         student_name = student_names.get(student_id, 'Desconocido').title()
+        student_sortable_name = student_sortable_names.get(student_id, 'Desconocido')
         student_sis_user_id = student.get('sis_user_id', 'Desconocido')
         rut = student_sis_user_id[:-1] + '-' + student_sis_user_id[-1] if student_sis_user_id != 'Desconocido' else 'Desconocido'
         student_email = user_emails.get(student_id, 'Desconocido').lower()
-        row = {'Estudiante': student_name, 'Rut': rut, 'Email': student_email}
+        row = {
+            'Estudiante': student_name,
+            'Rut': rut,
+            'Email': student_email,
+            'SortableName': student_sortable_name}
         for submission in student['submissions']:
             assignment_id = submission['assignment_id']
             assignment_name = assignment_names.get(assignment_id, f'Tarea {assignment_id}')
@@ -140,7 +164,8 @@ def obtener_notas_curso(COURSE_ID):
         return None
     df = df.set_index('Estudiante')
     # Ordenar los estudiantes de forma alfabética
-    df = df.sort_index()
+    df = df.sort_values('SortableName', key=lambda x: x.apply(spanish_sort_key))
+    df = df.drop(columns=['SortableName'])
     return df
 
 def course_info(COURSE_ID):
@@ -254,7 +279,8 @@ def main():
                 if not df_missing_grades.empty:
                     st.header(':red[ESTE CURSO TIENE NOTAS PENDIENTES DE LOS SIGUIENTES ALUMNOS 😭]')
                     st.subheader(f'{course_name} ({course_id})', divider='red')
-                    st.dataframe(df_missing_grades.fillna('❌'), use_container_width=True)
+                    df_style = df_missing_grades.style.format(na_rep='❌')
+                    st.dataframe(df_style, use_container_width=True)
                 else:
                     st.header(':green[ESTE CURSO TIENE TODAS SUS NOTAS!!!] 🤩')
                     st.subheader(f'{course_name} ({course_id})', divider='green')
