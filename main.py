@@ -213,6 +213,8 @@ def main():
         st.session_state['dataframes'] = {}
     if 'course_names' not in st.session_state:
         st.session_state['course_names'] = {}
+    if 'sis_courses_ids' not in st.session_state:
+        st.session_state['sis_courses_ids'] = {}
 
     input_ids = st.text_input('Ingresa uno o varios IDs de cursos:', '')
 
@@ -224,10 +226,13 @@ def main():
             st.session_state['button_clicked'] = True
             st.session_state['dataframes'] = {}
             st.session_state['course_names'] = {}
+            st.session_state['sis_courses_ids'] = {}
             for course_id in course_ids:
                 info = course_info(course_id)
                 course_name = info.get("name", "Desconocido") if info else "Desconocido"
+                course_sis_id = info.get('sis_course_id', "Desconocido") if info else "Desconocido"
                 st.session_state['course_names'][course_id] = course_name
+                st.session_state['sis_courses_ids'][course_id] = course_sis_id
                 try:
                     df = obtener_notas_curso(course_id)
                     if df is not None:
@@ -242,6 +247,7 @@ def main():
     if st.session_state.get('button_clicked'):
         for course_id in st.session_state['course_ids']:
             course_name = st.session_state['course_names'].get(course_id, 'Desconocido')
+            course_sis_id = st.session_state['sis_courses_ids'].get(course_id, 'Desconocido')
             df = st.session_state['dataframes'].get(course_id)
             if df is not None:
                 df_missing_grades = df[df.map(lambda x: pd.isnull(x)).any(axis=1)]
@@ -261,7 +267,7 @@ def main():
                     st.download_button(
                         label="Descargar Reporte",
                         data=excel_data,
-                        file_name=f"{course_name} - {course_id}.xlsx",
+                        file_name=f"{course_id}_{course_name}({course_sis_id}).xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key=f"download_{course_id}"  # Clave única para cada botón
                     )
