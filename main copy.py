@@ -3,8 +3,6 @@ import requests
 import pandas as pd
 from decouple import config
 from io import BytesIO
-import time
-
 
 
 API_URL = 'https://canvas.uautonoma.cl/api/v1'
@@ -31,7 +29,7 @@ def obtener_notas_curso(COURSE_ID):
     if not students:
         st.warning(f'No se encontraron estudiantes para el curso {COURSE_ID}')
         return None
-
+    
     import unicodedata
 
     # Define the custom sorting key function
@@ -47,12 +45,10 @@ def obtener_notas_curso(COURSE_ID):
         # We'll use 'N~' to achieve this
         name = name.replace('Ñ', 'N~')
         return name
-
-    # Filtrar los estudiantes y crear diccionarios para nombres
+    
     student_ids = [s['id'] for s in students if s['name'] != 'Estudiante de prueba']
     student_names = {s['id']: s['name'] for s in students if s['name'] != 'Estudiante de prueba'}
     student_sortable_names = {s['id']: s['sortable_name'] for s in students if s['name'] != 'Estudiante de prueba'}
-    user_emails = {s['id']: s.get('login_id', 'Desconocido') for s in students if s['name'] != 'Estudiante de prueba'}
 
     # Obtener la lista de tareas (assignments) y sus nombres
     assignments = []
@@ -70,54 +66,6 @@ def obtener_notas_curso(COURSE_ID):
         return None
     assignment_names = {a['id']: a['name'] for a in assignments}
 
-    # Crear una estructura inicial del DataFrame con los estudiantes
-    data = []
-    for student_id in student_ids:
-        student_name = student_names.get(student_id, 'Desconocido').title()
-        student_sortable_name = student_sortable_names.get(student_id, 'Desconocido')
-        student_email = user_emails.get(student_id, 'Desconocido').lower()
-        row = {
-            'Estudiante': student_name,
-            'Email': student_email,
-            'SortableName': student_sortable_name
-        }
-        data.append(row)
-
-    df = pd.DataFrame(data)
-    df = df.set_index('Estudiante')
-
-    # Para cada tarea, obtener las submissions y actualizar el DataFrame
-    for assignment in assignments:
-        assignment_id = assignment['id']
-        assignment_name = assignment['name']
-
-        # Hacer la solicitud GET para obtener las submissions de la tarea actual
-        url = f'{API_URL}/courses/{COURSE_ID}/assignments/{assignment_id}/submissions'
-        params = {'per_page': 100}
-        submissions = []
-        while url:
-            response = requests.get(url, headers=headers, params=params)
-            if response.status_code != 200:
-                st.error(f'Error al obtener submissions de la tarea {assignment_name} ({assignment_id}): {response.text}')
-                return None
-            submissions.extend(response.json())
-            url = response.links.get('next', {}).get('url')
-
-        # Procesar las submissions y actualizar el DataFrame
-        for submission in submissions:
-            student_id = submission['user_id']
-            grade = submission.get('grade')
-            if grade is not None:
-                try:
-                    grade = float(grade)
-                except ValueError:
-                    pass  # Mantener el valor original si no se puede convertir
-            else:
-                grade = None
-            student_name = student_names.get(student_id, 'Desconocido').title()
-            if student_name in df.index:
-                df.at[student_name, assignment_name] = grade
-
     # Obtener las inscripciones para extraer las notas finales
     enrollments = []
     url = f'{API_URL}/courses/{COURSE_ID}/enrollments'
@@ -133,16 +81,11 @@ def obtener_notas_curso(COURSE_ID):
     # Crear diccionarios con las notas finales de cada estudiante
     final_grades = {}
     final_scores = {}
-    user_ruts = {}
+    user_emails = {}
     for enrollment in enrollments:
         user_id = enrollment['user_id']
         grades = enrollment.get('grades', {})
-        user_sis_user_id = enrollment['user'].get('sis_user_id', 'Desconocido')
-        if user_sis_user_id != 'Desconocido':
-            rut = user_sis_user_id[:-1] + '-' + user_sis_user_id[-1]
-        else:
-            rut = 'Desconocido'
-        user_ruts[user_id] = rut
+        user_emails[user_id] = enrollment['user']['login_id']
         final_grade = grades.get('final_grade')  # Nota final en formato numérico
         final_score = grades.get('final_score')  # Porcentaje final
         try:
@@ -151,28 +94,78 @@ def obtener_notas_curso(COURSE_ID):
             final_grades[user_id] = None
         final_scores[user_id] = f"{final_score}%" if final_score is not None else None
 
-    # Agregar las notas finales y RUT al DataFrame
-    for student_id in student_ids:
+    # Configurar los parámetros de la solicitud para las submissions
+    url = f'{API_URL}/courses/{COURSE_ID}/students/submissions'
+    params = {
+        'include[]': 'sub_assignment_submissions',
+        'exclude_response_fields[]': [
+            'preview_url', 'external_tool_url', 'url', 'attachments', 'attempt',
+            'cached_due_date', 'sticker', 'submitted_at', 'redo_request',
+            'late_policy_status', 'late', 'points_deducted', 'posted_at',
+            'proxy_submitter', 'proxy_submitter_id', 'seconds_late', 'excused',
+            'grading_period_id', 'grade_matches_current_submission',
+        ],
+        'grouped': 1,
+        'response_fields[]': [
+            'assignment_id',
+            'custom_grade_status_id', 'entered_grade', 'entered_score',
+            'grade', 'id', 'missing', 'score', 'submission_type', 'user_id',
+            'workflow_state'
+        ],
+        'student_ids[]': student_ids,
+        'per_page': 100
+    }
+
+    # Obtener las submissions
+    submissions = []
+    while url:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code != 200:
+            st.error(f'Error al obtener submissions del curso {COURSE_ID}: {response.text}')
+            return None
+        submissions.extend(response.json())
+        url = response.links.get('next', {}).get('url')
+
+    # Construir la tabla
+    data = []
+    for student in submissions:
+        student_id = student['user_id']
         student_name = student_names.get(student_id, 'Desconocido').title()
-        if student_name in df.index:
-            df.at[student_name, 'Rut'] = user_ruts.get(student_id, 'Desconocido')
-            df.at[student_name, 'Porcentaje'] = final_scores.get(student_id)
-            if final_grades.get(student_id) != None:
-                df.at[student_name, 'Nota'] = final_grades.get(student_id)
+        student_sortable_name = student_sortable_names.get(student_id, 'Desconocido')
+        student_sis_user_id = student.get('sis_user_id', 'Desconocido')
+        rut = student_sis_user_id[:-1] + '-' + student_sis_user_id[-1] if student_sis_user_id != 'Desconocido' else 'Desconocido'
+        student_email = user_emails.get(student_id, 'Desconocido').lower()
+        row = {
+            'Estudiante': student_name,
+            'Rut': rut,
+            'Email': student_email,
+            'SortableName': student_sortable_name}
+        for submission in student['submissions']:
+            assignment_id = submission['assignment_id']
+            assignment_name = assignment_names.get(assignment_id, f'Tarea {assignment_id}')
+            grade = submission.get('grade')
+            if grade is not None:
+                try:
+                    grade = float(grade)
+                except ValueError:
+                    pass  # Mantener el valor original si no se puede convertir
             else:
-                df.at[student_name, 'Nota'] = "Sin Nota"
+                grade = None
+            row[assignment_name] = grade
+        # Agregar las notas finales al registro
+        row['Porcentaje'] = final_scores.get(student_id)
+        row['Nota'] = final_grades.get(student_id)
+        data.append(row)
 
-    # Ordenar los estudiantes de forma alfabética
-    df = df.sort_values('SortableName', key=lambda x: x.apply(spanish_sort_key))
-    df = df.drop(columns=['SortableName'])
-
-    # Eliminar la columna 'Autoevaluación' si existe
+    df = pd.DataFrame(data)
     df = df.drop(columns='Autoevaluación') if 'Autoevaluación' in df.columns else df
-
     if df.empty:
         st.warning(f'No se encontraron calificaciones para el curso {COURSE_ID}')
         return None
-
+    df = df.set_index('Estudiante')
+    # Ordenar los estudiantes de forma alfabética
+    df = df.sort_values('SortableName', key=lambda x: x.apply(spanish_sort_key))
+    df = df.drop(columns=['SortableName'])
     return df
 
 def course_info(COURSE_ID):
@@ -252,7 +245,6 @@ def main():
 
     def process_input():
         if input_ids:
-            st.session_state['start_time'] = time.time()
             course_ids = input_ids.replace(',', ' ').replace('\n', ' ').split()
             course_ids = [cid.strip() for cid in course_ids if cid.strip()]
             st.session_state['course_ids'] = course_ids
@@ -281,11 +273,6 @@ def main():
         for course_id in st.session_state['course_ids']:
             course_name = st.session_state['course_names'].get(course_id, 'Desconocido')
             course_sis_id = st.session_state['sis_courses_ids'].get(course_id, 'Desconocido')
-            if 'start_time' in st.session_state:
-                elapsed_time = time.time() - st.session_state['start_time']
-                st.write(f"⏱️ Tiempo de procesamiento: {elapsed_time:.2f} segundos")
-                # Opcional: eliminar 'start_time' del estado de sesión si no lo necesitas más
-                del st.session_state['start_time']
             df = st.session_state['dataframes'].get(course_id)
             if df is not None:
                 df_missing_grades = df[df.map(lambda x: pd.isnull(x)).any(axis=1)]
