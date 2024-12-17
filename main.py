@@ -302,10 +302,12 @@ def main():
                     nombre_curso = f"{course_name}"  # Cambia el nombre del curso según necesites
                     filtered_dataframe.insert(2, 'Curso', nombre_curso)
                     excel_data = to_excel(filtered_dataframe)
+                    promedio_notas = round(df['Nota'].mean(), 2)
+                    st.subheader(f'Promedio Notas: {promedio_notas}')
                     st.download_button(
                         label="Descargar Reporte",
                         data=excel_data,
-                        file_name=f"{course_id}_{course_name}({course_sis_id}).xlsx",
+                        file_name=f"{course_id}_{course_name}_{course_sis_id}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key=f"download_{course_id}"  # Clave única para cada botón
                     )
