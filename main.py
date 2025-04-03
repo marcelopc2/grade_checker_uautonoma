@@ -4,9 +4,6 @@ import pandas as pd
 from decouple import config
 from io import BytesIO
 import time
-import numpy as np
-
-
 
 API_URL = 'https://canvas.uautonoma.cl/api/v1'
 ACCESS_TOKEN = config('TOKEN')  # Reemplaza con tu token de acceso
@@ -34,22 +31,14 @@ def obtener_notas_curso(COURSE_ID):
         return None
 
     import unicodedata
-
-    # Define the custom sorting key function
+    # Función para ordenar nombres en español
     def spanish_sort_key(name):
-        # Normalize the name to uppercase
         name = name.upper()
-        # Remove accents from characters
-        name = ''.join(
-            (c for c in unicodedata.normalize('NFD', name)
-             if unicodedata.category(c) != 'Mn')
-        )
-        # Replace 'Ñ' with a placeholder that comes after 'N' and before 'O'
-        # We'll use 'N~' to achieve this
+        name = ''.join((c for c in unicodedata.normalize('NFD', name) if unicodedata.category(c) != 'Mn'))
         name = name.replace('Ñ', 'N~')
         return name
 
-    # Filtrar los estudiantes y crear diccionarios para nombres
+    # Filtrar estudiantes y crear diccionarios
     student_ids = [s['id'] for s in students if s['name'] != 'Estudiante de prueba']
     student_names = {s['id']: s['name'] for s in students if s['name'] != 'Estudiante de prueba'}
     student_sortable_names = {s['id']: s['sortable_name'] for s in students if s['name'] != 'Estudiante de prueba'}
@@ -69,7 +58,6 @@ def obtener_notas_curso(COURSE_ID):
     if not assignments:
         st.warning(f'No se encontraron tareas para el curso {COURSE_ID}')
         return None
-    assignment_names = {a['id']: a['name'] for a in assignments}
 
     # Crear una estructura inicial del DataFrame con los estudiantes
     data = []
@@ -91,8 +79,6 @@ def obtener_notas_curso(COURSE_ID):
     for assignment in assignments:
         assignment_id = assignment['id']
         assignment_name = assignment['name']
-
-        # Hacer la solicitud GET para obtener las submissions de la tarea actual
         url = f'{API_URL}/courses/{COURSE_ID}/assignments/{assignment_id}/submissions'
         params = {'per_page': 100}
         submissions = []
@@ -104,7 +90,7 @@ def obtener_notas_curso(COURSE_ID):
             submissions.extend(response.json())
             url = response.links.get('next', {}).get('url')
 
-        # Procesar las submissions y actualizar el DataFrame
+        # Actualizar el DataFrame con las notas de cada submission
         for submission in submissions:
             student_id = submission['user_id']
             grade = submission.get('grade')
@@ -158,7 +144,7 @@ def obtener_notas_curso(COURSE_ID):
         if student_name in df.index:
             df.at[student_name, 'Rut'] = user_ruts.get(student_id, 'Desconocido')
             df.at[student_name, 'Porcentaje'] = final_scores.get(student_id)
-            if final_grades.get(student_id) != None:
+            if final_grades.get(student_id) is not None:
                 df.at[student_name, 'Nota'] = final_grades.get(student_id)
             else:
                 df.at[student_name, 'Nota'] = "Sin Nota"
@@ -188,49 +174,25 @@ def course_info(COURSE_ID):
 def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Escribir el DataFrame al archivo Excel sin formatos
         df.to_excel(writer, sheet_name='Calificaciones', index=True, header=True)
         workbook = writer.book
         worksheet = writer.sheets['Calificaciones']
-
-        # Ajustar anchos de columna
         for idx, col in enumerate(df.columns):
-            # Obtener el ancho máximo entre el contenido y el nombre de la columna
-            max_len = max(
-                df[col].astype(str).map(len).max(),
-                len(str(col))
-            ) + 2  # Añadir un poco de espacio extra
+            max_len = max(df[col].astype(str).map(len).max(), len(str(col))) + 2
             worksheet.set_column(idx + 1, idx + 1, max_len)
-
-        # Ajustar ancho de la columna índice
-        max_len = max(
-            df.index.astype(str).map(len).max(),
-            len(str(df.index.name)) if df.index.name else 0
-        ) + 2
+        max_len = max(df.index.astype(str).map(len).max(), len(str(df.index.name)) if df.index.name else 0) + 2
         worksheet.set_column(0, 0, max_len)
-
-        # Crear formato para la columna índice sin negrita, sin centrado y sin bordes
         index_format = workbook.add_format({'align': 'left', 'bold': False, 'border': 0})
-
-        # Escribir el nombre del índice (si existe) con el formato deseado
         if df.index.name:
             worksheet.write(0, 0, df.index.name, index_format)
         else:
             worksheet.write(0, 0, '', index_format)
-
-        # Escribir los valores del índice (nombres de los estudiantes) con el formato deseado
         for row_num, value in enumerate(df.index.values):
             worksheet.write(row_num + 1, 0, value, index_format)
-
-        # Formato para notas: mostrar siempre una decimal
         grade_format = workbook.add_format({'num_format': '0.0'})
-
-        # Aplicar el formato a las columnas de notas
         for idx, col in enumerate(df.columns):
             if col not in ['Rut', 'Email', 'Curso']:
-                # Aplicar el formato solo a las columnas de notas
                 worksheet.set_column(idx + 1, idx + 1, None, grade_format)
-
     processed_data = output.getvalue()
     return processed_data
 
@@ -285,34 +247,44 @@ def main():
             if 'start_time' in st.session_state:
                 elapsed_time = time.time() - st.session_state['start_time']
                 st.write(f"⏱️ Tiempo de procesamiento: {elapsed_time:.2f} segundos")
-                # Opcional: eliminar 'start_time' del estado de sesión si no lo necesitas más
                 del st.session_state['start_time']
             df = st.session_state['dataframes'].get(course_id)
             if df is not None:
+                # Convertir la columna 'Nota' a numérico para evaluar su contenido
+                numeric_values = pd.to_numeric(df['Nota'], errors='coerce')
+                # Obtener los registros donde falte alguna nota
                 df_missing_grades = df[df.map(lambda x: pd.isnull(x)).any(axis=1)]
-                if not df_missing_grades.empty:
-                    st.header(':red[ESTE CURSO TIENE NOTAS PENDIENTES DE LOS SIGUIENTES ALUMNOS 😭]')
-                    st.subheader(f'{course_name} ({course_id})', divider='red')
-                    st.dataframe(df_missing_grades.fillna('❌'), use_container_width=True)
-                else:
+                
+                if df_missing_grades.empty:
+                    # No faltan notas
                     st.header(':green[ESTE CURSO TIENE TODAS SUS NOTAS!!!] 🤩')
                     st.subheader(f'{course_name} ({course_id})', divider='green')
                     st.dataframe(df, use_container_width=True)
-                    columnas_necesarias = ['Rut', 'Email', 'Nota']
-                    filtered_dataframe = df.loc[:, columnas_necesarias]
-                    nombre_curso = f"{course_name}"  # Cambia el nombre del curso según necesites
-                    filtered_dataframe.insert(2, 'Curso', nombre_curso)
-                    excel_data = to_excel(filtered_dataframe)
-                    # print(np.nan not in df['Nota'].values)
-                    promedio_notas = round(df['Nota'].mean(), 2) if np.nan in df['Nota'].values else 'Escala de notas no activada'
-                    st.subheader(f'Promedio Notas: {promedio_notas}')
-                    st.download_button(
-                        label="Descargar Reporte",
-                        data=excel_data,
-                        file_name=f"{course_id}_{course_name}_{course_sis_id}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"download_{course_id}"  # Clave única para cada botón
-                    )
+                    if numeric_values.isnull().all():
+                        st.info("No se pudo calcular el promedio, probablemente la escala de notas no esté activada.")
+                    else:
+                        promedio_notas = round(numeric_values.mean(), 2)
+                        st.subheader(f'Promedio Notas: {promedio_notas}')
+                        columnas_necesarias = ['Rut', 'Email', 'Nota']
+                        filtered_dataframe = df.loc[:, columnas_necesarias]
+                        filtered_dataframe.insert(2, 'Curso', course_name)
+                        excel_data = to_excel(filtered_dataframe)
+                        st.download_button(
+                            label="Descargar Reporte",
+                            data=excel_data,
+                            file_name=f"{course_id}_{course_name}_{course_sis_id}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"download_{course_id}"
+                        )
+                else:
+                    # Faltan notas
+                    st.header(':red[ESTE CURSO TIENE NOTAS PENDIENTES DE LOS SIGUIENTES ALUMNOS 😭]')
+                    st.subheader(f'{course_name} ({course_id})', divider='red')
+                    st.dataframe(df_missing_grades.fillna('❌'), use_container_width=True)
+                    if numeric_values.isnull().all():
+                        st.info("No se pudo calcular el promedio, probablemente la escala de notas no esté activada.")
+                    else:
+                        st.warning("Faltan notas, no se puede descargar el excel.")
             else:
                 st.warning(f'No se encontraron calificaciones para el curso {course_id}')
 
