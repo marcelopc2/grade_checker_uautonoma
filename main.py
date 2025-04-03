@@ -4,6 +4,7 @@ import pandas as pd
 from decouple import config
 from io import BytesIO
 import time
+import numpy as np
 
 
 
@@ -302,7 +303,8 @@ def main():
                     nombre_curso = f"{course_name}"  # Cambia el nombre del curso según necesites
                     filtered_dataframe.insert(2, 'Curso', nombre_curso)
                     excel_data = to_excel(filtered_dataframe)
-                    promedio_notas = round(df['Nota'].mean(), 2)
+                    # print(np.nan not in df['Nota'].values)
+                    promedio_notas = round(df['Nota'].mean(), 2) if np.nan in df['Nota'].values else 'Escala de notas no activada'
                     st.subheader(f'Promedio Notas: {promedio_notas}')
                     st.download_button(
                         label="Descargar Reporte",
