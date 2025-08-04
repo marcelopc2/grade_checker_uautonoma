@@ -186,7 +186,7 @@ def obtener_notas_curso(COURSE_ID):
         }
         
         # Redondear el porcentaje al entero más cercano
-        porcentaje_entero = round(porcentaje)
+        porcentaje_entero = min(round(porcentaje), 100)
         return portugal_scale.get(porcentaje_entero, "Sin Nota")
 
     # Aplicar las escalas de notas
@@ -414,10 +414,10 @@ def main():
                 # Métricas
                 numeric_values = pd.to_numeric(df['Nota UAC'], errors='coerce')
                 col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Promedio UAC",    f"{round(numeric_values.mean(),1)}")
-                col2.metric("Promedio UAP",    f"{round(df['Nota UAP'].mean(),2)}")
-                col3.metric("Promedio IEES",   f"{round(df['Nota IEES'].mean(),1)}")
-                col4.metric("Promedio Carver", f"{round(df['Nota Carver'].mean(),2)}")
+                col1.metric("Promedio UAC",    f"{round(pd.to_numeric(df['Nota UAC'], errors='coerce').mean(skipna=True), 1)}")
+                col2.metric("Promedio UAP",    f"{round(pd.to_numeric(df['Nota UAP'], errors='coerce').mean(skipna=True), 2)}")
+                col3.metric("Promedio IEES",   f"{round(pd.to_numeric(df['Nota IEES'], errors='coerce').mean(skipna=True), 1)}")
+                col4.metric("Promedio Carver", f"{round(pd.to_numeric(df['Nota Carver'], errors='coerce').mean(skipna=True), 2)}")
 
                 # Preparar Excel con solo las columnas seleccionadas + Rut, Email, Curso
                 base_cols = ['Rut', 'Email']
